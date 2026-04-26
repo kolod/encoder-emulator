@@ -1,0 +1,75 @@
+; Encoder emulator for Raspberry Pi Pico
+; Copyright (C) 2026-...  Oleksandr Kolodkin <oleksandr.kolodkin@ukr.net>
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+.program ws2812
+
+; One wire, 800 kHz NZR protocol. Each bit is three phases:
+;   T1: rising edge (data captured here)
+;   T2: high hold  (longer = 1, shorter = 0)
+;   T3: low reset
+; The side-set pin drives the data line; autopull shifts 24-bit GRB words.
+
+.side_set 1
+
+.define public T1 2  ; rising-edge duration   (cycles)
+.define public T2 5  ; high-hold duration     (cycles)
+.define public T3 3  ; low-reset duration     (cycles)
+
+.wrap_target
+bitloop:
+    out x, 1       side 0 [T3 - 1] ; pull next bit, hold line low for T3
+    jmp !x do_zero side 1 [T1 - 1] ; raise line; jump if bit == 0
+do_one:
+    jmp  bitloop   side 1 [T2 - 1] ; keep line high for T2 (logic 1)
+do_zero:
+    nop            side 0 [T2 - 1] ; drop line for T2 (logic 0)
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "board.h"
+
+static PIO  ws_pio;
+static uint ws_sm;
+
+static inline void ws2812_init(void) {
+    ws_pio      = pio0;
+    ws_sm       = pio_claim_unused_sm(ws_pio, true);
+    uint offset = pio_add_program(ws_pio, &ws2812_program);
+
+    pio_gpio_init(ws_pio, WS2812_LED_PIN);
+    pio_sm_set_consecutive_pindirs(ws_pio, ws_sm, WS2812_LED_PIN, 1, true);
+
+    pio_sm_config c = ws2812_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, WS2812_LED_PIN);
+    sm_config_set_out_shift(&c, false, true, 24); // MSB-first, autopull at 24 bits (GRB)
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    // Clock divider: run SM at exactly WS2812_LED_FREQ * (T1+T2+T3) Hz
+    int   cycles = ws2812_T1 + ws2812_T2 + ws2812_T3;
+    float div    = (float)clock_get_hz(clk_sys) / (WS2812_LED_FREQ * cycles);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(ws_pio, ws_sm, offset, &c);
+    pio_sm_set_enabled(ws_pio, ws_sm, true);
+}
+
+static inline void ws2812_set_rgb(uint8_t r, uint8_t g, uint8_t b) {
+    // WS2812 expects GRB order; shift up 8 so the 24 bits sit at the MSB end
+    uint32_t grb = ((uint32_t)g << 16) | ((uint32_t)r << 8) | b;
+    pio_sm_put_blocking(ws_pio, ws_sm, grb << 8u);
+}
+%}
