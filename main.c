@@ -17,7 +17,6 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "ws2812.pio.h"
-#include "quadrature_encoder.pio.h"
 #include "board.h"
 #include "emulated.h"
 #include "display.h"
@@ -27,20 +26,18 @@
 
 static void core1_entry(void) {
     display_init();
-    buttons_init();
 
-    static encoder_t disp_enc;
-    encoder_setup(&disp_enc, pio1, DISPLAY_ENCODER_PHASE_A_PIN);
-    int32_t enc_prev     = disp_enc.position;
-    bool    back_prev    = false;
-    bool    confirm_prev = false;
-    bool    push_prev    = false;
+    static debounce_t dbounce;
+    uint32_t prev_state = debounce_setup(&dbounce, pio1,
+                                         DISPLAY_BUTTON_BACK_PIN, 5,
+                                         DEBOUNCE_SETTLE_US);
+    input_irq_init(&dbounce);
     uint32_t last_draw_ms = 0;
 
     while (true) {
         serial_poll();
 
-        event_t ev = input_poll(&disp_enc, &enc_prev, &back_prev, &confirm_prev, &push_prev);
+        event_t ev = input_poll(&prev_state);
         if (ev != EVENT_NONE) handle_event(ev);
 
         uint32_t now = to_ms_since_boot(get_absolute_time());

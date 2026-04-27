@@ -33,13 +33,26 @@
 #define OLED_I2C_ADDR 0x3C    // SSD1306 I2C address
 
 // Buttons on the Display board
-#define DISPLAY_BUTTON_BACK_PIN        3
-#define DISPLAY_BUTTON_CONFIRM_PIN     4
+#define DISPLAY_BUTTON_BACK_PIN        2
+#define DISPLAY_BUTTON_CONFIRM_PIN     3
 
 // Rotary Encoder (Input)
-#define DISPLAY_ENCODER_PUSH_PIN       5
-#define DISPLAY_ENCODER_PHASE_A_PIN    6
-#define DISPLAY_ENCODER_PHASE_B_PIN    7
+#define DISPLAY_ENCODER_PUSH_PIN       4
+#define DISPLAY_ENCODER_PHASE_A_PIN    5
+#define DISPLAY_ENCODER_PHASE_B_PIN    5
+
+// Debounce settle window for all UI inputs (buttons + encoder A/B).
+// Raise if inputs are still noisy; lower if the encoder feels sluggish.
+#define DEBOUNCE_SETTLE_US              500u
+
+// Number of raw quadrature steps that make one mechanical detent.
+// 2 = most common (A then B per click). Set to 1 if each edge is one detent.
+#define ENC_STEPS_PER_DETENT              4
+
+// After an encoder direction event, suppress any reversal that arrives within
+// this window. Filters mechanical snap-back at detents without affecting
+// continuous same-direction rotation.
+#define ENC_HOLDOFF_MS                    5u
 
 // Quadrature Encoder (Output)
 #define EMULATED_ENCODER_PHASE_A_PIN   8

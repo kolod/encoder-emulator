@@ -156,19 +156,19 @@ void handle_event(event_t ev) {
     switch (nav) {
 
         case NAV_ROOT:
-            if (ev == EVENT_ENC_UP || ev == EVENT_ENC_DOWN) {
+            if (ev == EVENT_ENCODER_PLUS || ev == EVENT_ENCODER_MINUS) {
                 mutex_enter_blocking(&emulated_mutex);
                 int32_t inc = emulated.encoder_increment;
                 emulated.encoder_target_position +=
-                    (ev == EVENT_ENC_UP) ? inc : -inc;
+                    (ev == EVENT_ENCODER_PLUS) ? inc : -inc;
                 mutex_exit(&emulated_mutex);
             }
             if (ev == EVENT_CONFIRM) { nav = NAV_MENU; menu_sel = 0; }
             break;
 
         case NAV_MENU:
-            if (ev == EVENT_ENC_UP   && menu_sel > 0) menu_sel--;
-            if (ev == EVENT_ENC_DOWN && menu_sel < 1) menu_sel++;
+            if (ev == EVENT_ENCODER_PLUS  && menu_sel > 0) menu_sel--;
+            if (ev == EVENT_ENCODER_MINUS && menu_sel < 1) menu_sel++;
             if (ev == EVENT_BACK)    nav = NAV_ROOT;
             if (ev == EVENT_CONFIRM) {
                 if (menu_sel == 0) {
@@ -185,17 +185,17 @@ void handle_event(event_t ev) {
 
         case NAV_PARAMS:
             if (!param_edit) {
-                if (ev == EVENT_ENC_UP   && param_sel > 0)               param_sel--;
-                if (ev == EVENT_ENC_DOWN && param_sel < PARAM_COUNT - 1)  param_sel++;
+                if (ev == EVENT_ENCODER_PLUS  && param_sel > 0)               param_sel--;
+                if (ev == EVENT_ENCODER_MINUS && param_sel < PARAM_COUNT - 1) param_sel++;
                 if (ev == EVENT_BACK)    nav = NAV_MENU;
                 if (ev == EVENT_CONFIRM) {
                     if (param_sel == 6) param_set(6, param_get(6) ^ 1);
                     else                param_edit = true;
                 }
             } else {
-                if (ev == EVENT_ENC_UP || ev == EVENT_ENC_DOWN) {
+                if (ev == EVENT_ENCODER_PLUS || ev == EVENT_ENCODER_MINUS) {
                     int64_t v = param_get(param_sel);
-                    v += (ev == EVENT_ENC_UP) ? params[param_sel].step : -params[param_sel].step;
+                    v += (ev == EVENT_ENCODER_PLUS) ? params[param_sel].step : -params[param_sel].step;
                     if (v < params[param_sel].min_val) v = params[param_sel].min_val;
                     if (v > params[param_sel].max_val) v = params[param_sel].max_val;
                     param_set(param_sel, v);

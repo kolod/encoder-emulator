@@ -69,9 +69,9 @@ target_compile_options(u8g2lib PRIVATE -w -ffunction-sections -fdata-sections)
 add_library(ws2812_pio INTERFACE)
 pico_generate_pio_header(ws2812_pio ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio)
 
-# ---- Quadrature encoder PIO ---------------------------------------------------
-add_library(quadrature_encoder_pio INTERFACE)
-pico_generate_pio_header(quadrature_encoder_pio ${CMAKE_CURRENT_LIST_DIR}/quadrature_encoder.pio)
+# ---- Input debounce PIO -------------------------------------------------------
+add_library(input_debounce_pio INTERFACE)
+pico_generate_pio_header(input_debounce_pio ${CMAKE_CURRENT_LIST_DIR}/input_debounce.pio)
 
 # ---- Main executable ----------------------------------------------------------
 add_executable(encoder-emulator
@@ -105,7 +105,7 @@ target_link_libraries(encoder-emulator
     hardware_clocks
     u8g2lib
     ws2812_pio
-    quadrature_encoder_pio
+    input_debounce_pio
 )
 
 # Create map/bin/hex/uf2 files

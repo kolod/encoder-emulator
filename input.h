@@ -17,10 +17,8 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdbool.h>
 #include "ui.h"
-#include "quadrature_encoder.pio.h"
+#include "input_debounce.pio.h"
 
-void    buttons_init(void);
-event_t input_poll(encoder_t *enc, int32_t *enc_prev,
-                   bool *back_prev, bool *confirm_prev, bool *push_prev);
+void    input_irq_init(debounce_t *d);
+event_t input_poll(uint32_t *prev_state);

@@ -174,7 +174,7 @@ def main() -> None:
     # Brief pause: Windows sometimes needs a moment after the drive letter appears
     time.sleep(0.5)
 
-    console.print(f"  Copying to [cyan]{drive}[/cyan] ...")
+    console.print(f"  Copying to [cyan]{drive} [/cyan]...")
     try:
         shutil.copy2(args.uf2, os.path.join(drive, os.path.basename(args.uf2)))
     except Exception as e:
