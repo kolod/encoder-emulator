@@ -42,70 +42,116 @@ static void qenc_set(int64_t pos, int16_t ppr, bool linear) {
 }
 
 // Trapezoidal motion profile using kinematic v² = u² ± 2a (one step = 1 unit).
+// Float velocity avoids integer stall: with int, sqrt(v²+2a)-v ≈ a/v < 1 once v≥a.
 void core0_entry(void) {
     qenc_init();
 
-    int64_t pos   = 0;
-    int32_t speed = 0; // steps/sec, signed
+    int64_t pos    = 0;
+    float   fspeed = 0.0f;  // steps/sec, signed
 
     while (true) {
         mutex_enter_blocking(&emulated_mutex);
         if (emulated.reset_requested) {
-            pos = 0; speed = 0;
+            pos = 0; fspeed = 0.0f;
             emulated.encoder_current_position = 0;
             emulated.encoder_current_speed    = 0;
+            emulated.encoder_target_velocity  = 0;
             emulated.reset_requested          = false;
         }
-        int64_t target = emulated.encoder_target_position;
-        int32_t tspeed = emulated.encoder_target_speed;
-        int32_t accel  = emulated.encoder_acceleration;
-        int32_t decel  = emulated.encoder_deceleration;
-        int16_t ppr    = emulated.encoder_ppr;
-        bool    linear = emulated.is_linear;
+        int64_t target   = emulated.encoder_target_position;
+        float   ftspeed  = (float)emulated.encoder_target_speed;
+        float   ftvel    = (float)emulated.encoder_target_velocity;
+        float   fa       = (float)emulated.encoder_acceleration;
+        float   fd       = (float)emulated.encoder_deceleration;
+        int16_t ppr      = emulated.encoder_ppr;
+        bool    linear   = emulated.is_linear;
+        bool    spd_mode = emulated.is_speed_mode;
         mutex_exit(&emulated_mutex);
 
-        int64_t delta = target - pos;
+        float abs_spd = fspeed < 0.0f ? -fspeed : fspeed;
 
-        if (delta == 0 && speed == 0) {
-            sleep_ms(5);
-            continue;
-        }
+        if (spd_mode) {
+            float abs_tvel = ftvel < 0.0f ? -ftvel : ftvel;
 
-        int32_t dir     = (delta > 0) ? 1 : -1;
-        int64_t dist    = delta < 0 ? -delta : delta;
-        int32_t abs_spd = speed < 0 ? -speed : speed;
+            if (abs_spd < 0.5f && abs_tvel < 0.5f) {
+                sleep_ms(5);
+                continue;
+            }
 
-        // Stopping distance at current speed: v²/(2a)
-        int64_t stop_dist = (decel > 0) ? ((int64_t)abs_spd * abs_spd) / (2 * decel) : 0;
+            int32_t dir = (fspeed > 0.5f) ? 1 : (fspeed < -0.5f) ? -1 : (ftvel >= 0.0f) ? 1 : -1;
+            bool reversing = (abs_spd > 0.5f) && (abs_tvel > 0.5f) &&
+                             ((ftvel > 0.0f) != (fspeed > 0.0f));
 
-        // Decelerate if we'd overshoot, or if moving in the wrong direction
-        bool decel_phase = (dist <= stop_dist + 1) || (dir > 0 && speed < 0) || (dir < 0 && speed > 0);
+            if (reversing) {
+                float sq = abs_spd * abs_spd - 2.0f * fd;
+                abs_spd = (sq > 0.0f) ? sqrtf(sq) : 0.0f;
+            } else if (abs_spd < abs_tvel) {
+                abs_spd = sqrtf(abs_spd * abs_spd + 2.0f * fa);
+                if (abs_spd > abs_tvel) abs_spd = abs_tvel;
+            } else if (abs_spd > abs_tvel) {
+                float sq = abs_spd * abs_spd - 2.0f * fd;
+                abs_spd = (sq > 0.0f) ? sqrtf(sq) : 0.0f;
+            }
+            fspeed = (float)dir * abs_spd;
 
-        int64_t sq;
-        if (decel_phase) {
-            sq = (int64_t)abs_spd * abs_spd - 2 * decel;
-            abs_spd = (sq > 0) ? (int32_t)sqrtf((float)sq) : 0;
+            if (abs_spd < 0.5f) {
+                fspeed = 0.0f;
+                mutex_enter_blocking(&emulated_mutex);
+                emulated.encoder_current_speed = 0;
+                mutex_exit(&emulated_mutex);
+                sleep_ms(5);
+                continue;
+            }
+
+            pos += dir;
+            qenc_set(pos, ppr, linear);
+
+            mutex_enter_blocking(&emulated_mutex);
+            emulated.encoder_current_position = pos;
+            emulated.encoder_current_speed    = (int32_t)fspeed;
+            mutex_exit(&emulated_mutex);
+
+            sleep_us((uint32_t)(1000000.0f / abs_spd));
         } else {
-            sq = (int64_t)abs_spd * abs_spd + 2 * accel;
-            abs_spd = (int32_t)sqrtf((float)sq);
-            if (abs_spd > tspeed) abs_spd = tspeed;
+            int64_t delta = target - pos;
+
+            if (delta == 0 && abs_spd < 0.5f) {
+                fspeed = 0.0f;
+                sleep_ms(5);
+                continue;
+            }
+
+            int32_t dir  = (delta > 0) ? 1 : -1;
+            float   dist = (float)(delta < 0 ? -delta : delta);
+
+            float stop_dist = (fd > 0.0f) ? (abs_spd * abs_spd) / (2.0f * fd) : 0.0f;
+            bool decel_phase = (dist <= stop_dist + 1.0f) ||
+                               (dir > 0 && fspeed < 0.0f) || (dir < 0 && fspeed > 0.0f);
+
+            if (decel_phase) {
+                float sq = abs_spd * abs_spd - 2.0f * fd;
+                abs_spd = (sq > 0.0f) ? sqrtf(sq) : 0.0f;
+            } else {
+                abs_spd = sqrtf(abs_spd * abs_spd + 2.0f * fa);
+                if (abs_spd > ftspeed) abs_spd = ftspeed;
+            }
+            if (abs_spd < 0.5f && dist > 0.0f) abs_spd = 1.0f;
+            fspeed = (float)dir * abs_spd;
+
+            pos += dir;
+            if ((dir > 0 && pos > target) || (dir < 0 && pos < target)) {
+                pos = target; fspeed = 0.0f; abs_spd = 0.0f;
+            }
+
+            qenc_set(pos, ppr, linear);
+
+            mutex_enter_blocking(&emulated_mutex);
+            emulated.encoder_current_position = pos;
+            emulated.encoder_current_speed    = (int32_t)fspeed;
+            mutex_exit(&emulated_mutex);
+
+            uint32_t step_us = abs_spd > 0.5f ? (uint32_t)(1000000.0f / abs_spd) : 1000000u;
+            sleep_us(step_us);
         }
-        if (abs_spd == 0 && dist > 0) abs_spd = 1;
-        speed = dir * abs_spd;
-
-        pos += dir;
-        if ((dir > 0 && pos > target) || (dir < 0 && pos < target)) {
-            pos = target; speed = 0;
-        }
-
-        qenc_set(pos, ppr, linear);
-
-        mutex_enter_blocking(&emulated_mutex);
-        emulated.encoder_current_position = pos;
-        emulated.encoder_current_speed    = speed;
-        mutex_exit(&emulated_mutex);
-
-        uint32_t step_us = abs_spd > 0 ? (1000000u / (uint32_t)abs_spd) : 1000000u;
-        sleep_us(step_us);
     }
 }

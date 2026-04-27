@@ -20,7 +20,9 @@
 //   accel <n>    set acceleration      (steps/s²)
 //   decel <n>    set deceleration      (steps/s²)
 //   ppr <n>      set pulses/revolution
-//   linear <0|1> set mode  0=rotary  1=linear
+//   incr <n>     set encoder increment per detent
+//   linear <0|1> 0=rotary  1=linear
+//   mode <0|1>   0=position  1=speed
 //   reset        move to 0 and zero current position immediately
 //   get          print all params and current state
 //   boot         reboot into BOOTSEL (programming) mode
@@ -40,7 +42,8 @@ static const struct { const char *cmd; int param_idx; } serial_cmds[] = {
     { "accel",  2 },
     { "decel",  3 },
     { "ppr",    4 },
-    { "linear", 5 },
+    { "incr",   5 },
+    { "linear", 6 },
 };
 
 static void serial_handle(const char *line) {
@@ -52,6 +55,20 @@ static void serial_handle(const char *line) {
     while (*line && *line != ' ' && ki < 15) kw[ki++] = *line++;
     while (*line == ' ') line++;
 
+    if (!strcmp(kw, "mode")) {
+        while (*line == ' ') line++;
+        if (*line == '0' || *line == '1') {
+            bool spd = (*line == '1');
+            mutex_enter_blocking(&emulated_mutex);
+            emulated.is_speed_mode = spd;
+            mutex_exit(&emulated_mutex);
+            printf("ok: mode=%s\r\n", spd ? "speed" : "pos");
+        } else {
+            printf("err: mode <0|1>  0=position 1=speed\r\n");
+        }
+        return;
+    }
+
     if (!strcmp(kw, "reset")) {
         mutex_enter_blocking(&emulated_mutex);
         emulated.encoder_target_position = 0;
@@ -60,26 +77,32 @@ static void serial_handle(const char *line) {
         printf("ok: position reset to 0\r\n");
         return;
     }
+
     if (!strcmp(kw, "get")) {
         mutex_enter_blocking(&emulated_mutex);
-        long cur  = (long)emulated.encoder_current_position;
-        long spd  = (long)emulated.encoder_current_speed;
-        long tgt  = (long)emulated.encoder_target_position;
-        long tspd = (long)emulated.encoder_target_speed;
-        long acc  = (long)emulated.encoder_acceleration;
-        long dec  = (long)emulated.encoder_deceleration;
-        long ppr  = (long)emulated.encoder_ppr;
-        bool lin  = emulated.is_linear;
+        long cur    = (long)emulated.encoder_current_position;
+        long spd    = (long)emulated.encoder_current_speed;
+        long tgt    = (long)emulated.encoder_target_position;
+        long tspd   = (long)emulated.encoder_target_speed;
+        long tvel   = (long)emulated.encoder_target_velocity;
+        long acc    = (long)emulated.encoder_acceleration;
+        long dec    = (long)emulated.encoder_deceleration;
+        long ppr    = (long)emulated.encoder_ppr;
+        long incr   = (long)emulated.encoder_increment;
+        bool lin    = emulated.is_linear;
+        bool spdmod = emulated.is_speed_mode;
         mutex_exit(&emulated_mutex);
         printf("cur=%ld spd=%ld\r\n", cur, spd);
-        printf("pos=%ld spd=%ld accel=%ld decel=%ld ppr=%ld linear=%d\r\n",
-               tgt, tspd, acc, dec, ppr, lin ? 1 : 0);
+        printf("pos=%ld tspd=%ld tvel=%ld accel=%ld decel=%ld ppr=%ld incr=%ld linear=%d mode=%s\r\n",
+               tgt, tspd, tvel, acc, dec, ppr, incr, lin ? 1 : 0, spdmod ? "speed" : "pos");
         return;
     }
+
     if (!strcmp(kw, "boot")) {
         printf("Rebooting into BOOTSEL mode...\r\n");
         reset_usb_boot(0, 0);
     }
+    
     if (!strcmp(kw, "help") || !strcmp(kw, "?")) {
         printf("Commands:\r\n"
                "  pos <n>      target position (steps)\r\n"
@@ -87,7 +110,9 @@ static void serial_handle(const char *line) {
                "  accel <n>    acceleration (steps/s^2)\r\n"
                "  decel <n>    deceleration (steps/s^2)\r\n"
                "  ppr <n>      pulses per revolution\r\n"
+               "  incr <n>     encoder increment per detent\r\n"
                "  linear <0|1> 0=rotary 1=linear\r\n"
+               "  mode <0|1>   0=position 1=speed\r\n"
                "  reset        zero position immediately\r\n"
                "  get          print current state\r\n"
                "  boot         reboot into BOOTSEL (programming) mode\r\n");

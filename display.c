@@ -28,8 +28,9 @@ typedef enum { NAV_ROOT, NAV_MENU, NAV_PARAMS } nav_t;
 
 static nav_t nav        = NAV_ROOT;
 static int   menu_sel   = 0;
-static int   param_sel  = 0;
-static bool  param_edit = false;
+static int   param_sel    = 0;
+static int   param_scroll = 0;
+static bool  param_edit   = false;
 
 // ---- I2C / u8g2 callbacks -----------------------------------------------
 
@@ -91,11 +92,11 @@ void display_init(void) {
 
 static void draw_root(void) {
     mutex_enter_blocking(&emulated_mutex);
-    long cur = (long)emulated.encoder_current_position;
-    long tgt = (long)emulated.encoder_target_position;
-    long spd = (long)emulated.encoder_current_speed;
-    bool lin = emulated.is_linear;
-    (void)lin;
+    long cur      = (long)emulated.encoder_current_position;
+    long tgt      = (long)emulated.encoder_target_position;
+    long spd      = (long)emulated.encoder_current_speed;
+    long tvel     = (long)emulated.encoder_target_velocity;
+    bool spd_mode = emulated.is_speed_mode;
     mutex_exit(&emulated_mutex);
 
     char buf[24];
@@ -103,31 +104,51 @@ static void draw_root(void) {
     u8g2_DrawStr(&u8g2, 2, 10, "Current pos:");
     u8g2_DrawStr(&u8g2, 2, 20, buf);
 
-    snprintf(buf, sizeof(buf), "%ld", tgt);
-    u8g2_DrawStr(&u8g2, 2, 30, "Target pos:");
-    u8g2_DrawStr(&u8g2, 2, 40, buf);
+    if (spd_mode) {
+        snprintf(buf, sizeof(buf), "%ld", tvel);
+        u8g2_DrawStr(&u8g2, 2, 30, "Target spd:");
+        u8g2_DrawStr(&u8g2, 2, 40, buf);
 
-    snprintf(buf, sizeof(buf), "%ld", spd);
-    u8g2_DrawStr(&u8g2, 2, 50, "Speed:");
-    u8g2_DrawStr(&u8g2, 2, 60, buf);
+        snprintf(buf, sizeof(buf), "%ld", spd);
+        u8g2_DrawStr(&u8g2, 2, 50, "Cur speed:");
+        u8g2_DrawStr(&u8g2, 2, 60, buf);
+    } else {
+        snprintf(buf, sizeof(buf), "%ld", tgt);
+        u8g2_DrawStr(&u8g2, 2, 30, "Target pos:");
+        u8g2_DrawStr(&u8g2, 2, 40, buf);
+
+        snprintf(buf, sizeof(buf), "%ld", spd);
+        u8g2_DrawStr(&u8g2, 2, 50, "Speed:");
+        u8g2_DrawStr(&u8g2, 2, 60, buf);
+    }
 }
 
 static void draw_menu(void) {
-    u8g2_DrawStr(&u8g2, 0, 10, "=== Menu ===");
-    const char *items[] = { "Reset position", "Parameters" };
-    for (int i = 0; i < 2; i++) {
-        char buf[20];
+    mutex_enter_blocking(&emulated_mutex);
+    bool spd_mode = emulated.is_speed_mode;
+    mutex_exit(&emulated_mutex);
+    char mode_label[16];
+    snprintf(mode_label, sizeof(mode_label), "Mode: %s", spd_mode ? "Speed" : "Pos");
+    const char *items[] = { "Reset position", mode_label, "Parameters" };
+    for (int i = 0; i < 3; i++) {
+        char buf[22];
         snprintf(buf, sizeof(buf), "%c %s", (i == menu_sel) ? '>' : ' ', items[i]);
-        u8g2_DrawStr(&u8g2, 0, 26 + i * 14, buf);
+        u8g2_DrawStr(&u8g2, 0, 22 + i * 12, buf);
     }
-    u8g2_DrawStr(&u8g2, 0, 58, "[Back] cancel");
 }
 
 static void draw_params(void) {
-    for (int i = 0; i < PARAM_COUNT; i++) {
+    mutex_enter_blocking(&emulated_mutex);
+    bool spd_mode = emulated.is_speed_mode;
+    mutex_exit(&emulated_mutex);
+
+    int row = 0;
+    for (int i = param_scroll; i < PARAM_COUNT && row < 6; i++) {
+        if (spd_mode && i == 0) continue;
+
         int64_t v = param_get(i);
         char vbuf[14];
-        if (i == 5) snprintf(vbuf, sizeof(vbuf), "%s",    v ? "Yes" : "No");
+        if (i == 6) snprintf(vbuf, sizeof(vbuf), "%s", v ? "Yes" : "No");
         else        snprintf(vbuf, sizeof(vbuf), "%ld", (long)v);
 
         char buf[24];
@@ -136,7 +157,8 @@ static void draw_params(void) {
             snprintf(buf, sizeof(buf), ">%-7s[%s]", params[i].label, vbuf);
         else
             snprintf(buf, sizeof(buf), "%c%-7s %s", sel ? '>' : ' ', params[i].label, vbuf);
-        u8g2_DrawStr(&u8g2, 0, 10 + i * 10, buf);
+        u8g2_DrawStr(&u8g2, 0, 10 + row * 10, buf);
+        row++;
     }
 }
 
@@ -159,38 +181,67 @@ void handle_event(event_t ev) {
             if (ev == EVENT_ENCODER_PLUS || ev == EVENT_ENCODER_MINUS) {
                 mutex_enter_blocking(&emulated_mutex);
                 int32_t inc = emulated.encoder_increment;
-                emulated.encoder_target_position +=
-                    (ev == EVENT_ENCODER_PLUS) ? inc : -inc;
+                if (emulated.is_speed_mode) {
+                    int32_t tspd = emulated.encoder_target_speed;
+                    int32_t tvel = emulated.encoder_target_velocity;
+                    tvel += (ev == EVENT_ENCODER_PLUS) ? inc : -inc;
+                    if (tvel >  tspd) tvel =  tspd;
+                    if (tvel < -tspd) tvel = -tspd;
+                    emulated.encoder_target_velocity = tvel;
+                } else {
+                    emulated.encoder_target_position +=
+                        (ev == EVENT_ENCODER_PLUS) ? inc : -inc;
+                }
                 mutex_exit(&emulated_mutex);
             }
             if (ev == EVENT_CONFIRM) { nav = NAV_MENU; menu_sel = 0; }
             break;
 
         case NAV_MENU:
-            if (ev == EVENT_ENCODER_PLUS  && menu_sel > 0) menu_sel--;
-            if (ev == EVENT_ENCODER_MINUS && menu_sel < 1) menu_sel++;
-            if (ev == EVENT_BACK)    nav = NAV_ROOT;
+            if (ev == EVENT_ENCODER_MINUS && menu_sel > 0) menu_sel--;
+            if (ev == EVENT_ENCODER_PLUS  && menu_sel < 2) menu_sel++;
+            if (ev == EVENT_BACK) nav = NAV_ROOT;
             if (ev == EVENT_CONFIRM) {
                 if (menu_sel == 0) {
                     mutex_enter_blocking(&emulated_mutex);
                     emulated.encoder_target_position = 0;
+                    emulated.encoder_target_velocity = 0;
                     emulated.reset_requested         = true;
                     mutex_exit(&emulated_mutex);
                     nav = NAV_ROOT;
+                } else if (menu_sel == 1) {
+                    mutex_enter_blocking(&emulated_mutex);
+                    emulated.is_speed_mode = !emulated.is_speed_mode;
+                    mutex_exit(&emulated_mutex);
                 } else {
-                    nav = NAV_PARAMS; param_sel = 0; param_edit = false;
+                    mutex_enter_blocking(&emulated_mutex);
+                    bool spd = emulated.is_speed_mode;
+                    mutex_exit(&emulated_mutex);
+                    nav = NAV_PARAMS; param_sel = spd ? 1 : 0; param_scroll = 0; param_edit = false;
                 }
             }
             break;
 
-        case NAV_PARAMS:
+        case NAV_PARAMS: {
+            mutex_enter_blocking(&emulated_mutex);
+            bool spd_mode = emulated.is_speed_mode;
+            mutex_exit(&emulated_mutex);
+            int min_sel = spd_mode ? 1 : 0;
             if (!param_edit) {
-                if (ev == EVENT_ENCODER_PLUS  && param_sel > 0)               param_sel--;
-                if (ev == EVENT_ENCODER_MINUS && param_sel < PARAM_COUNT - 1) param_sel++;
-                if (ev == EVENT_BACK)    nav = NAV_MENU;
+                if (ev == EVENT_ENCODER_MINUS && param_sel > min_sel) {
+                    param_sel--;
+                    if (param_sel < param_scroll) param_scroll = param_sel;
+                }
+                if (ev == EVENT_ENCODER_PLUS  && param_sel < PARAM_COUNT - 1) {
+                    param_sel++;
+                    if (param_sel >= param_scroll + 6) param_scroll = param_sel - 5;
+                }
+                if (ev == EVENT_BACK) nav = NAV_MENU;
                 if (ev == EVENT_CONFIRM) {
-                    if (param_sel == 6) param_set(6, param_get(6) ^ 1);
-                    else                param_edit = true;
+                    if (param_sel == 6)
+                        param_set(6, param_get(6) ^ 1);
+                    else
+                        param_edit = true;
                 }
             } else {
                 if (ev == EVENT_ENCODER_PLUS || ev == EVENT_ENCODER_MINUS) {
@@ -203,5 +254,6 @@ void handle_event(event_t ev) {
                 if (ev == EVENT_CONFIRM || ev == EVENT_BACK) param_edit = false;
             }
             break;
+        }
     }
 }

@@ -45,8 +45,8 @@ int64_t param_get(int i) {
         case 2: v = emulated.encoder_acceleration;    break;
         case 3: v = emulated.encoder_deceleration;    break;
         case 4: v = emulated.encoder_ppr;             break;
-        case 5: v = emulated.encoder_increment;       break;
-        case 6: v = emulated.is_linear ? 1 : 0;       break;
+        case 5: v = emulated.encoder_increment;          break;
+        case 6: v = emulated.is_linear ? 1 : 0; break;
     }
     mutex_exit(&emulated_mutex);
     return v;
@@ -61,7 +61,7 @@ void param_set(int i, int64_t v) {
         case 3: emulated.encoder_deceleration    = (int32_t)v;  break;
         case 4: emulated.encoder_ppr             = (int16_t)v;  break;
         case 5: emulated.encoder_increment       = (int32_t)v;  break;
-        case 6: emulated.is_linear               = (v != 0);    break;
+        case 6: emulated.is_linear     = (v != 0); break;
     }
     mutex_exit(&emulated_mutex);
 }

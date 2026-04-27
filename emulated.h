@@ -30,7 +30,9 @@ typedef struct {
     int32_t encoder_deceleration;
     int16_t encoder_ppr;
     int32_t encoder_increment;
+    int32_t encoder_target_velocity;  // signed speed setpoint used in speed mode
     bool    is_linear;
+    bool    is_speed_mode;
     bool    reset_requested;
 } emulated_t;
 
