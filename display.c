@@ -79,7 +79,7 @@ void display_init(void) {
     gpio_set_function(OLED_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(OLED_SDA_PIN);
     gpio_pull_up(OLED_SCL_PIN);
-    u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_pico_i2c_cb, u8x8_pico_delay_cb);
+    u8g2_Setup_sh1106_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_pico_i2c_cb, u8x8_pico_delay_cb);
     u8g2_SetI2CAddress(&u8g2, (uint8_t)(OLED_I2C_ADDR << 1));
     u8g2_InitDisplay(&u8g2);
     u8g2_SetPowerSave(&u8g2, 0);
@@ -101,25 +101,25 @@ static void draw_root(void) {
 
     char buf[24];
     snprintf(buf, sizeof(buf), "%ld", cur);
-    u8g2_DrawStr(&u8g2, 2, 10, "Current pos:");
-    u8g2_DrawStr(&u8g2, 2, 20, buf);
+    u8g2_DrawStr(&u8g2, 0, 10, "Current pos:");
+    u8g2_DrawStr(&u8g2, 0, 20, buf);
 
     if (spd_mode) {
         snprintf(buf, sizeof(buf), "%ld", tvel);
-        u8g2_DrawStr(&u8g2, 2, 30, "Target spd:");
-        u8g2_DrawStr(&u8g2, 2, 40, buf);
+        u8g2_DrawStr(&u8g2, 0, 30, "Target spd:");
+        u8g2_DrawStr(&u8g2, 0, 40, buf);
 
         snprintf(buf, sizeof(buf), "%ld", spd);
-        u8g2_DrawStr(&u8g2, 2, 50, "Cur speed:");
-        u8g2_DrawStr(&u8g2, 2, 60, buf);
+        u8g2_DrawStr(&u8g2, 0, 50, "Cur speed:");
+        u8g2_DrawStr(&u8g2, 0, 60, buf);
     } else {
         snprintf(buf, sizeof(buf), "%ld", tgt);
-        u8g2_DrawStr(&u8g2, 2, 30, "Target pos:");
-        u8g2_DrawStr(&u8g2, 2, 40, buf);
+        u8g2_DrawStr(&u8g2, 0, 30, "Target pos:");
+        u8g2_DrawStr(&u8g2, 0, 40, buf);
 
         snprintf(buf, sizeof(buf), "%ld", spd);
-        u8g2_DrawStr(&u8g2, 2, 50, "Speed:");
-        u8g2_DrawStr(&u8g2, 2, 60, buf);
+        u8g2_DrawStr(&u8g2, 0, 50, "Speed:");
+        u8g2_DrawStr(&u8g2, 0, 60, buf);
     }
 }
 
