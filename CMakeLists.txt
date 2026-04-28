@@ -17,6 +17,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 include(FetchContent)
+include(cmake/Flash.cmake)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -98,6 +99,7 @@ target_include_directories(encoder-emulator PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(encoder-emulator
     pico_stdlib
     pico_multicore
+    pico_unique_id
     hardware_i2c
     hardware_dma
     hardware_pio
@@ -118,28 +120,10 @@ add_custom_command(TARGET encoder-emulator POST_BUILD
 )
 
 # Flash to device on every build invocation, even if nothing changed.
-# Override the serial port at configure time if auto-detection fails:
+# Override at configure time if auto-detection fails:
 #   cmake -DFLASH_PORT=COM3 ..
+#   cmake -DFLASH_UID=e6614c311b812b23 ..  (from the 'uid' serial command)
 set(FLASH_PORT "" CACHE STRING "Serial port for flashing (e.g. COM3). Auto-detected if empty.")
+set(FLASH_UID  "" CACHE STRING "RP2040 unique ID (hex) to target a specific device.")
 
-find_package(Python3 QUIET)
-if(Python3_FOUND)
-    if(FLASH_PORT)
-        set(FLASH_PORT_ARG --port ${FLASH_PORT})
-    else()
-        set(FLASH_PORT_ARG "")
-    endif()
-    # Custom target with no output: CMake always considers it out-of-date and runs it.
-    # add_dependencies ensures encoder-emulator (and its UF2) is up-to-date first.
-    add_custom_target(flash ALL
-        COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/flash.py
-                ${FLASH_PORT_ARG}
-                $<TARGET_FILE_DIR:encoder-emulator>/encoder-emulator.uf2
-        COMMENT "Flashing encoder-emulator.uf2 to device..."
-        VERBATIM
-    )
-    add_dependencies(flash encoder-emulator)
-else()
-    message(STATUS "Python3 not found — automatic flashing disabled")
-endif()
+pico_add_flash_target(encoder-emulator PORT ${FLASH_PORT} UID ${FLASH_UID})

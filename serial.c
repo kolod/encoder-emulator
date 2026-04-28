@@ -25,6 +25,7 @@
 //   mode <0|1>   0=position  1=speed
 //   reset        move to 0 and zero current position immediately
 //   get          print all params and current state
+//   uid          print unique board ID (8-byte hex)
 //   boot         reboot into BOOTSEL (programming) mode
 //   help / ?     show this list
 
@@ -33,6 +34,7 @@
 #include <stdlib.h>
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
+#include "pico/unique_id.h"
 #include "emulated.h"
 #include "serial.h"
 
@@ -98,6 +100,16 @@ static void serial_handle(const char *line) {
         return;
     }
 
+    if (!strcmp(kw, "uid")) {
+        pico_unique_board_id_t id;
+        pico_get_unique_board_id(&id);
+        printf("uid=");
+        for (int j = 0; j < PICO_UNIQUE_BOARD_ID_SIZE_BYTES; j++)
+            printf("%02x", id.id[j]);
+        printf("\r\n");
+        return;
+    }
+
     if (!strcmp(kw, "boot")) {
         printf("Rebooting into BOOTSEL mode...\r\n");
         reset_usb_boot(0, 0);
@@ -115,6 +127,7 @@ static void serial_handle(const char *line) {
                "  mode <0|1>   0=position 1=speed\r\n"
                "  reset        zero position immediately\r\n"
                "  get          print current state\r\n"
+               "  uid          print unique board ID (8-byte hex)\r\n"
                "  boot         reboot into BOOTSEL (programming) mode\r\n");
         return;
     }
@@ -148,6 +161,7 @@ void serial_poll(void) {
         if (c == '\r' || c == '\n') {
             if (serial_len > 0) {
                 serial_buf[serial_len] = '\0';
+                printf("\r\n");
                 serial_handle(serial_buf);
                 serial_len = 0;
             }
