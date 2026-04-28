@@ -194,6 +194,13 @@ void handle_event(event_t ev) {
                 }
                 mutex_exit(&emulated_mutex);
             }
+            if (ev == EVENT_BACK) {
+                mutex_enter_blocking(&emulated_mutex);
+                emulated.encoder_target_position = 0;
+                emulated.encoder_target_velocity = 0;
+                emulated.reset_requested         = true;
+                mutex_exit(&emulated_mutex);
+            }
             if (ev == EVENT_CONFIRM) { nav = NAV_MENU; menu_sel = 0; }
             break;
 
