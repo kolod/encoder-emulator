@@ -17,7 +17,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 include(FetchContent)
-include(cmake/Flash.cmake)
+include(cmake/flash.cmake)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
